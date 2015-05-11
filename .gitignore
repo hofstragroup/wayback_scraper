@@ -1,3 +1,14 @@
+# Created by https://www.gitignore.io
+
+### Django ###
+*.log
+*.pot
+*.pyc
+__pycache__/
+local_settings.py
+
+
+### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -7,6 +18,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+venv/
 env/
 build/
 develop-eggs/
@@ -56,8 +68,13 @@ docs/_build/
 # PyBuilder
 target/
 
+# Database
+*.sqlite3
+*.rdb
+
+# Static files
+config/static/*
+
 # Custom
-venv/
-*.txt
-outputs/
 *~
+static/
