@@ -90,7 +90,7 @@ class WaybackScraper(object):
         return domain
          
 
-    def _check_redirection(self, url, depth=1, previous=[]):
+    def _check_redirection(self, url, depth=1):
         """ Checks and follows redirections of a snapshot URL """
         resp = requests.get(url)
         soup = BeautifulSoup(resp.content)
@@ -102,14 +102,14 @@ class WaybackScraper(object):
                 print('    %s' % url)
             redirect_url = redirect_link.find('a')['href'].strip('/web/')
             redirect_url = self.BASE_URL + redirect_url
-            if redirect_url == url or redirect_url in previous or depth >= 3:
-                # The url redirects to itself or in a loop
-                # or recursion depth limit of 3 is reached
+            if redirect_url == url or depth >= 3:
+                # The url redirects to itself or recursion
+                # depth limit of 3 is reached
                 recursive = True
             else:
                 print('    %s - Redirects to:' % depth)
                 print('    %s' % redirect_url)
-                return self._check_redirection(redirect_url, depth+1, previous+[redirect_url])
+                return self._check_redirection(redirect_url, depth+1)
         return (recursive, url)
         
         
@@ -218,9 +218,10 @@ if __name__ == '__main__':
             for date in w.sorted_urls:
                 for url in w.sorted_urls[date]:
                     if url['redirected']:
-                        # Include only the redirects to the same domain
-                        if url['same_domain']:
-                            urls[date].append(url)
+                        if url['recursive'] == False:
+                            # Include only the redirects to the same domain
+                            if url['same_domain']:
+                                urls[date].append(url)
                     else:
                         urls[date].append(url)
             scraped_domains += domains
