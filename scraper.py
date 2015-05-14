@@ -100,7 +100,7 @@ class WaybackScraper(object):
             if self.verbose:
                 print('--> Following the redirection for:')
                 print('    %s' % url)
-            redirect_url = redirect_link.find('a')['href'].strip('/web/')
+            redirect_url = redirect_link.find('a')['href'].replace('/web/', '')
             redirect_url = self.BASE_URL + redirect_url
             if redirect_url == url or depth >= 3:
                 # The url redirects to itself or recursion
