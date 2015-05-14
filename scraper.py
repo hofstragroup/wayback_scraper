@@ -92,7 +92,7 @@ class WaybackScraper(object):
 
     def _check_redirection(self, url, depth=1):
         """ Checks and follows redirections of a snapshot URL """
-        resp = requests.get(url)
+        resp = requests.get(url, allow_redirects=False)
         soup = BeautifulSoup(resp.content)
         redirect_link = soup.find('p', {'class': 'impatient'})
         recursive = False
