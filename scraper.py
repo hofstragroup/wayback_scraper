@@ -24,7 +24,6 @@ class WaybackScraper(object):
         """ Initializes the object with the user inputs """
         self.domains = domains
         self.new_domains = []
-        self.blacklist = blacklist
         if blacklist:
             self.blacklist = [urlparse(x.strip()).netloc for x in blacklist.splitlines() if x]
         else:
@@ -130,7 +129,7 @@ class WaybackScraper(object):
                 url_record['redirected'] = True
                 domain1 = self._extract_domain(current_url)
                 domain2 = self._extract_domain(url)
-                if domain1 == domain2:
+                if urlparse(domain1).netloc == urlparse(domain2).netloc:
                     url_record['same_domain'] = True
                 else:
                     url_record['same_domain'] = False
