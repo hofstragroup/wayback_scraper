@@ -14,6 +14,16 @@ import re
 
 
 
+def _extract_domain(url, netloc=False):
+    d = re.search(r'/web/\b(.*)', url).group(0)
+    d = '/'.join(d.split('/')[3:])
+    d = urlparse(d)
+    domain = '%s://%s' % (d.scheme, d.netloc)
+    if netloc:
+        domain = d.netloc
+    return domain
+
+
 class WaybackScraper(object):
 
     SEARCH_URL = 'http://web.archive.org/cdx/search/cdx'
@@ -79,14 +89,6 @@ class WaybackScraper(object):
             else:
                 print('\n%s: The error below was encountered for this domain!' % domain)
                 print(response.text)
-                
-
-    def _extract_domain(self, url):
-        d = re.search(r'/web/\b(.*)', url).group(0)
-        d = '/'.join(d.split('/')[3:])
-        d = urlparse(d)
-        domain = '%s://%s' % (d.scheme, d.netloc)
-        return domain
          
 
     def _check_redirection(self, url, depth=1):
@@ -127,16 +129,20 @@ class WaybackScraper(object):
                 url_record['redirected'] = False
             else:
                 url_record['redirected'] = True
-                domain1 = self._extract_domain(current_url)
-                domain2 = self._extract_domain(url)
+                domain1 = _extract_domain(current_url)
+                domain2 = _extract_domain(url)
                 if urlparse(domain1).netloc == urlparse(domain2).netloc:
                     url_record['same_domain'] = True
                 else:
                     url_record['same_domain'] = False
                     if domain2 not in self.new_domains:
-                        print('    New domain found: %s' % domain2)
+                        # Make sure the domain is not in the blacklist
                         if urlparse(domain2).netloc not in self.blacklist:
-                            self.new_domains.append(domain2)
+                            # Make sure that the URL is that of a web archive snapshot
+                            if '://web.archive.org/web/' in url:
+                                print('    New domain found: %s' % domain2)
+                                self.new_domains.append(domain2)
+                    
         return url_record
             
 
@@ -207,10 +213,14 @@ if __name__ == '__main__':
         new_domains = []
         scraped_domains = []
         dates = args.dates
-        urls = defaultdict(list)
+        urls = defaultdict(list) 
+        global_blacklist = None
         
         def recursively_scrape(domains, dates, scraped_domains, blacklist):
             w = WaybackScraper(domains, dates=args.dates.split(','), blacklist=blacklist)
+            global global_blacklist
+            if global_blacklist == None:
+                global_blacklist = w.blacklist
             print('\n:: Fetching snapshot URLs...')
             w.fetch_snapshot_urls()
             w.sort_snapshots_to_dates()
@@ -244,7 +254,9 @@ if __name__ == '__main__':
                 for url in urls[date]:
                     final_url = url['final_url']
                     if final_url not in final_urls:
-                        final_urls.append(final_url)
+                        d = _extract_domain(final_url, netloc=True)
+                        if d not in global_blacklist:
+                            final_urls.append(final_url)
                 for url in set(final_urls):
                     outf.write(url + '\n')
         
