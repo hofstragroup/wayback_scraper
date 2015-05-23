@@ -35,7 +35,7 @@ class WaybackScraper(object):
         self.domains = domains
         self.new_domains = []
         if blacklist:
-            self.blacklist = [urlparse(x.strip()).netloc for x in blacklist.splitlines() if x]
+            self.blacklist = blacklist
         else:
             self.blacklist = []
         self.status = status
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--blacklist', type=str, help='path to a file with a list of blacklisted sites')
     parser.add_argument('--outdir', type=str, default='.', help='path to output folder')
     args = parser.parse_args()
-    
+
     if args.domains and args.dates:
     
         with open(args.domains.strip(), 'r') as infile:
@@ -214,6 +214,13 @@ if __name__ == '__main__':
         scraped_domains = []
         dates = args.dates
         urls = defaultdict(list) 
+        
+        # Prepare the blacklist
+        if args.blacklist:
+            with open(args.blacklist, 'r') as blacklist:
+                blacklist = [urlparse(x.strip()).netloc for x in blacklist.read().splitlines() if x]
+        else:
+            blacklist = []
         global_blacklist = None
         
         def recursively_scrape(domains, dates, scraped_domains, blacklist):
@@ -235,16 +242,19 @@ if __name__ == '__main__':
                         urls[date].append(url)
             scraped_domains += domains
             if w.new_domains:
-                nd = set(w.new_domains) - set(scraped_domains)
-                nd = list(nd)
+                nds = set(w.new_domains) - set(scraped_domains)
+                nds = list(nds)
                 global new_domains
-                new_domains += nd
-                if nd:
-                    return recursively_scrape(nd, date, scraped_domains, blacklist)
+                for nd in nds:
+                    d = urlparse(nd).netloc
+                    if d not in global_blacklist:
+                        new_domains.append(nd)
+                if nds:
+                    return recursively_scrape(nds, date, scraped_domains, blacklist)
             return 'Done!'
         
         # Execute the recurive scraping function
-        recursively_scrape(domains, dates, scraped_domains, args.blacklist)
+        recursively_scrape(domains, dates, scraped_domains, blacklist)
         
         # Write the output files
         for date in urls:
