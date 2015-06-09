@@ -14,6 +14,16 @@ import re
 
 
 
+def _extract_domain(url, netloc=False):
+    d = re.search(r'/web/\b(.*)', url).group(0)
+    d = '/'.join(d.split('/')[3:])
+    d = urlparse(d)
+    domain = '%s://%s' % (d.scheme, d.netloc)
+    if netloc:
+        domain = d.netloc
+    return domain
+
+
 class WaybackScraper(object):
 
     SEARCH_URL = 'http://web.archive.org/cdx/search/cdx'
@@ -24,9 +34,8 @@ class WaybackScraper(object):
         """ Initializes the object with the user inputs """
         self.domains = domains
         self.new_domains = []
-        self.blacklist = blacklist
         if blacklist:
-            self.blacklist = [urlparse(x.strip()).netloc for x in blacklist.splitlines() if x]
+            self.blacklist = blacklist
         else:
             self.blacklist = []
         self.status = status
@@ -80,19 +89,11 @@ class WaybackScraper(object):
             else:
                 print('\n%s: The error below was encountered for this domain!' % domain)
                 print(response.text)
-                
-
-    def _extract_domain(self, url):
-        d = re.search(r'/web/\b(.*)', url).group(0)
-        d = '/'.join(d.split('/')[3:])
-        d = urlparse(d)
-        domain = '%s://%s' % (d.scheme, d.netloc)
-        return domain
          
 
-    def _check_redirection(self, url, depth=1, previous=[]):
+    def _check_redirection(self, url, depth=1):
         """ Checks and follows redirections of a snapshot URL """
-        resp = requests.get(url)
+        resp = requests.get(url, allow_redirects=False)
         soup = BeautifulSoup(resp.content)
         redirect_link = soup.find('p', {'class': 'impatient'})
         recursive = False
@@ -100,16 +101,16 @@ class WaybackScraper(object):
             if self.verbose:
                 print('--> Following the redirection for:')
                 print('    %s' % url)
-            redirect_url = redirect_link.find('a')['href'].strip('/web/')
+            redirect_url = redirect_link.find('a')['href'].replace('/web/', '')
             redirect_url = self.BASE_URL + redirect_url
-            if redirect_url == url or redirect_url in previous or depth >= 3:
-                # The url redirects to itself or in a loop
-                # or recursion depth limit of 3 is reached
+            if redirect_url == url or depth >= 3:
+                # The url redirects to itself or recursion
+                # depth limit of 3 is reached
                 recursive = True
             else:
                 print('    %s - Redirects to:' % depth)
                 print('    %s' % redirect_url)
-                return self._check_redirection(redirect_url, depth+1, previous+[redirect_url])
+                return self._check_redirection(redirect_url, depth+1)
         return (recursive, url)
         
         
@@ -128,16 +129,20 @@ class WaybackScraper(object):
                 url_record['redirected'] = False
             else:
                 url_record['redirected'] = True
-                domain1 = self._extract_domain(current_url)
-                domain2 = self._extract_domain(url)
-                if domain1 == domain2:
+                domain1 = _extract_domain(current_url)
+                domain2 = _extract_domain(url)
+                if urlparse(domain1).netloc == urlparse(domain2).netloc:
                     url_record['same_domain'] = True
                 else:
                     url_record['same_domain'] = False
                     if domain2 not in self.new_domains:
-                        print('    New domain found: %s' % domain2)
+                        # Make sure the domain is not in the blacklist
                         if urlparse(domain2).netloc not in self.blacklist:
-                            self.new_domains.append(domain2)
+                            # Make sure that the URL is that of a web archive snapshot
+                            if '://web.archive.org/web/' in url:
+                                print('    New domain found: %s' % domain2)
+                                self.new_domains.append(domain2)
+                    
         return url_record
             
 
@@ -199,7 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--blacklist', type=str, help='path to a file with a list of blacklisted sites')
     parser.add_argument('--outdir', type=str, default='.', help='path to output folder')
     args = parser.parse_args()
-    
+
     if args.domains and args.dates:
     
         with open(args.domains.strip(), 'r') as infile:
@@ -208,33 +213,48 @@ if __name__ == '__main__':
         new_domains = []
         scraped_domains = []
         dates = args.dates
-        urls = defaultdict(list)
+        urls = defaultdict(list) 
+        
+        # Prepare the blacklist
+        if args.blacklist:
+            with open(args.blacklist, 'r') as blacklist:
+                blacklist = [urlparse(x.strip()).netloc for x in blacklist.read().splitlines() if x]
+        else:
+            blacklist = []
+        global_blacklist = None
         
         def recursively_scrape(domains, dates, scraped_domains, blacklist):
             w = WaybackScraper(domains, dates=args.dates.split(','), blacklist=blacklist)
+            global global_blacklist
+            if global_blacklist == None:
+                global_blacklist = w.blacklist
             print('\n:: Fetching snapshot URLs...')
             w.fetch_snapshot_urls()
             w.sort_snapshots_to_dates()
             for date in w.sorted_urls:
                 for url in w.sorted_urls[date]:
                     if url['redirected']:
-                        # Include only the redirects to the same domain
-                        if url['same_domain']:
-                            urls[date].append(url)
+                        if url['recursive'] == False:
+                            # Include only the redirects to the same domain
+                            if url['same_domain']:
+                                urls[date].append(url)
                     else:
                         urls[date].append(url)
             scraped_domains += domains
             if w.new_domains:
-                nd = set(w.new_domains) - set(scraped_domains)
-                nd = list(nd)
+                nds = set(w.new_domains) - set(scraped_domains)
+                nds = list(nds)
                 global new_domains
-                new_domains += nd
-                if nd:
-                    return recursively_scrape(nd, date, scraped_domains, blacklist)
+                for nd in nds:
+                    d = urlparse(nd).netloc
+                    if d not in global_blacklist:
+                        new_domains.append(nd)
+                if nds:
+                    return recursively_scrape(nds, date, scraped_domains, blacklist)
             return 'Done!'
         
         # Execute the recurive scraping function
-        recursively_scrape(domains, dates, scraped_domains, args.blacklist)
+        recursively_scrape(domains, dates, scraped_domains, blacklist)
         
         # Write the output files
         for date in urls:
@@ -244,7 +264,9 @@ if __name__ == '__main__':
                 for url in urls[date]:
                     final_url = url['final_url']
                     if final_url not in final_urls:
-                        final_urls.append(final_url)
+                        d = _extract_domain(final_url, netloc=True)
+                        if d not in global_blacklist:
+                            final_urls.append(final_url)
                 for url in set(final_urls):
                     outf.write(url + '\n')
         
